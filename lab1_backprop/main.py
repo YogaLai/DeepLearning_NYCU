@@ -22,7 +22,7 @@ def tanh(x):
     return (np.exp(x)-np.exp(-x))/(np.exp(x)+np.exp(-x))
 
 def derivative_tanh(x):
-    return 1-x**2
+    return 1.-tanh(x)**2
 
 def err_loss(pred,labels):
     return np.mean((pred-labels)**2)
@@ -44,11 +44,11 @@ class Layer():
             self.x = np.append(x, np.ones((x.shape[0],1)), axis=1) # add bias
         else:
             self.x=x
-        self.z=sigmoid(self.x@self.w)
+        self.z=tanh(self.x@self.w)
         return self.z
 
     def backprop(self,dloss):
-        self.backward_gradient=np.multiply(dloss, derivative_sigmoid(self.z)) # dC/dz = dC/dy(dloss) * dy/dz(d_sigmoid)
+        self.backward_gradient=np.multiply(dloss, derivative_tanh(self.z)) # dC/dz = dC/dy(dloss) * dy/dz(d_sigmoid)
         if self.bias:
             return self.backward_gradient @ self.w[:-1].T # w[:-1] remove bias column
         else:
