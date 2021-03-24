@@ -44,11 +44,11 @@ class Layer():
             self.x = np.append(x, np.ones((x.shape[0],1)), axis=1) # add bias
         else:
             self.x=x
-        self.z=tanh(self.x@self.w)
+        self.z=sigmoid(self.x@self.w)
         return self.z
 
     def backprop(self,dloss):
-        self.backward_gradient=np.multiply(dloss, derivative_tanh(self.z)) # dC/dz = dC/dy(dloss) * dy/dz(d_sigmoid)
+        self.backward_gradient=np.multiply(dloss, derivative_sigmoid(self.z)) # dC/dz = dC/dy(dloss) * dy/dz(d_sigmoid)
         if self.bias:
             return self.backward_gradient @ self.w[:-1].T # w[:-1] remove bias column
         else:
@@ -63,8 +63,7 @@ class Layer():
             self.w -= lr * gradient   
 
 class Net():
-    # Initialize a network
-    def __init__(self,layer_setting,bias,lr=0.01):
+    def __init__(self,layer_setting,bias,lr=1):
         self.lr=lr
         self.layers=[]
         for input_dim,output_dim in zip(layer_setting[0],layer_setting[1]):
@@ -92,9 +91,11 @@ def main():
     }
     if args.type==data_type['Linear']:
         inputs,labels=generate_linear()
+        test_inputs,test_labels=generate_linear()
         tag='Linear'
     else:
         inputs,labels=generate_XOR()
+        test_inputs,test_labels=generate_XOR()
         tag='XOR'
 
     layer_setting=[[2,10,10],[10,10,1]]
@@ -110,13 +111,13 @@ def main():
             print('epoch %d loss :%f' % (epoch,loss))
             writer.add_scalar(tag+' loss',loss,epoch)
         if loss<0.03:
-            print('Converge')
+            print('Converge\n------------------------------------------------')
             break
 
+    print(tag+' prediction:\n',pred)
     pred=np.round(pred)
-    t=np.count_nonzero(pred==labels)
     show_result(inputs,labels,pred)
-    print('Accuracy: %.2f%%' % (np.count_nonzero(pred==labels)/len(labels)*100))
+    print('\nAccuracy: %.2f%%' % (np.count_nonzero(pred==labels)/len(labels)*100))
 
 if __name__=='__main__':
     main()
