@@ -24,6 +24,10 @@ class WordDataset(Dataset):
         self.tense2idx={'sp':0,'tp':1,'pg':2,'p':3}
         self.idx2tense={0:'sp',1:'tp',2:'pg',3:'p'}
         self.words, self.tense = getDataset(mode)
+        self.max_length = 0
+        for word in self.words:
+            if len(word) > self.max_length:
+                self.max_length = len(word)
 
     def words2tensor(self, word):
         indices=[]
@@ -38,6 +42,3 @@ class WordDataset(Dataset):
     def __getitem__(self, index):
         tense = torch.tensor(self.tense[index]).view(-1,1)
         return self.words2tensor(self.words[index]), tense
-
-dataset=WordDataset('train')
-print(dataset[1])
