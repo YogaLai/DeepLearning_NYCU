@@ -1,57 +1,44 @@
 import pandas as pd
-from torch.utils import data
+from torch.utils.data import Dataset
 import numpy as np
-
+import os
+from PIL import Image
+from torchvision import transforms
 
 def getData(mode):
     if mode == 'train':
         img = pd.read_csv('train_img.csv')
         label = pd.read_csv('train_label.csv')
-        return np.squeeze(img.values), np.squeeze(label.values)
     else:
         img = pd.read_csv('test_img.csv')
-        label = pd.read_csv('test_label.csv')
-        return np.squeeze(img.values), np.squeeze(label.values)
+        label= pd.read_csv('test_label.csv')
+    return np.squeeze(img.values), np.squeeze(label.values)
 
 
-class RetinopathyLoader(data.Dataset):
-    def __init__(self, root, mode):
+class RetinopathyLoader(Dataset):
+    def __init__(self, img_path, mode):
         """
         Args:
-            root (string): Root path of the dataset.
-            mode : Indicate procedure status(training or testing)
-
-            self.img_name (string list): String list that store all image names.
-            self.label (int or float list): Numerical list that store all ground truth label values.
+            img_path: Root path of the dataset.
+            mode: training/testing
+            
+            self.img_names (string list): String list that store all image names.
+            self.labels (int or float list): Numerical list that store all ground truth label values.
         """
-        self.root = root
-        self.img_name, self.label = getData(mode)
-        self.mode = mode
-        print("> Found %d images..." % (len(self.img_name)))
-
+        self.img_path = img_path
+        self.img_names, self.labels = getData(mode)        
+        
+        self.transformations=transforms.Compose([transforms.ToTensor(),
+                                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        print(f'>> Found {len(self.labels)} images...')
+        
     def __len__(self):
-        """'return the size of dataset"""
-        return len(self.img_name)
+        return len(self.labels)
 
     def __getitem__(self, index):
-        """something you should implement here"""
-
-        """
-           step1. Get the image path from 'self.img_name' and load it.
-                  hint : path = root + self.img_name[index] + '.jpeg'
-           
-           step2. Get the ground truth label from self.label
-                     
-           step3. Transform the .jpeg rgb images during the training phase, such as resizing, random flipping, 
-                  rotation, cropping, normalization etc. But at the beginning, I suggest you follow the hints. 
-                       
-                  In the testing phase, if you have a normalization process during the training phase, you only need 
-                  to normalize the data. 
-                  
-                  hints : Convert the pixel value to [0, 1]
-                          Transpose the image shape from [H, W, C] to [C, H, W]
-                         
-            step4. Return processed image and label
-        """
-
+        single_img_name=os.path.join(self.img_path,self.img_names[index]+'.jpeg')
+        single_img=Image.open(single_img_name)  # read an PIL image
+        img=self.transformations(single_img)
+        label=self.labels[index]
+        
         return img, label
