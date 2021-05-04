@@ -18,6 +18,7 @@ from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from dataloader import WordDataset
 from torch.utils.data import DataLoader
+from cvae import CVAE
 
 
 """========================================================================================
@@ -100,45 +101,7 @@ def Gaussian_score(words):
                     score += 1
     return score/len(words)
 
-#Encoder
-class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size):
-        super(EncoderRNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.lstm = nn.LSTM(hidden_size, hidden_size)
 
-    def forward(self, input, hidden, cell):
-        embedded = self.embedding(input).view(1, 1, -1) # view(1,1,-1) due to input of rnn must be (seq_len,batch,vec_dim)
-        output, (hidden, cell) = self.lstm(embedded, (hidden, cell))
-        return output, hidden, cell
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
-
-    def initCell(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
-
-#Decoder
-class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
-
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        output = self.out(output[0])
-        return output, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
     
 def train(word_tensor, tense_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=30):
     encoder_hidden = encoder.initHidden()
@@ -209,36 +172,63 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
+def criterion(predict_distribution, target_distribution, mu, var):
+    cross_entropy = nn.CrossEntropyLoss()
+    reconstruction_loss = cross_entropy(predict_distribution, target_distribution)
+    kl = nn.KLDivLoss()
 
+    # KL(N(mu, logvar)||N(0,1))
+    # mu, var = mu.data.numpy(), var.data.numpy()
+    # q = np.random.normal(mu, var)
+    q = torch.normal(mu, var)
+    uniform = torch.normal(torch.zeros(128),torch.ones(128))
+    uniform = uniform.to(device)
+    kl_loss = kl(q.view(-1),uniform)
+    return reconstruction_loss, kl_loss
 
 if __name__ == '__main__':
-    encoder = EncoderRNN(vocab_size, hidden_size).to(device)
-    decoder = DecoderRNN(hidden_size, vocab_size).to(device)
-
-    start = time.time()
-    plot_losses = []
-    print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
-
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=lr)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=lr)
-    # training_pairs = [tensorsFromPair(random.choice(pairs))
-    #                   for i in range(n_iters)]
     dataset = WordDataset('train')
     max_length = dataset.max_length + 5
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-    criterion = nn.CrossEntropyLoss()
+    model = CVAE(max_length)
+    model = model.to(device)
+    optimizer = optim.SGD(model.parameters(), lr=lr)
+    # encoder = EncoderRNN(vocab_size, hidden_size).to(device)
+    # decoder = DecoderRNN(hidden_size, vocab_size).to(device)
+
+    # start = time.time()
+    # plot_losses = []
+    # print_loss_total = 0  # Reset every print_every
+    # plot_loss_total = 0  # Reset every plot_every
+
+    # encoder_optimizer = optim.SGD(encoder.parameters(), lr=lr)
+    # decoder_optimizer = optim.SGD(decoder.parameters(), lr=lr)
+    # # training_pairs = [tensorsFromPair(random.choice(pairs))
+    # #                   for i in range(n_iters)]
+
+    # criterion = nn.CrossEntropyLoss()
 
     for word_tensor, tense_tensor in dataloader:
-        loss = train(word_tensor, tense_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion, max_length)
-        print_loss_total += loss
-        plot_loss_total += loss
+        optimizer.zero_grad()
+        word_tensor = word_tensor[0]
+        tense_tensor = tense_tensor[0]
+        word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
+        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
+        reconstruction_loss, kl_loss = criterion(predict_distribution, word_tensor.view(-1), mean, log_var)
+        loss = reconstruction_loss - kl_loss
+        loss.backward()
+        optimizer.step()
 
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
+        print('Reconstruction loss: %f\nKL loss: %f\n---------------------' % (reconstruction_loss, kl_loss))
+        
+        # loss = train(word_tensor, tense_tensor, encoder,
+        #              decoder, encoder_optimizer, decoder_optimizer, criterion, max_length)
+        # print_loss_total += loss
+        # plot_loss_total += loss
 
+        # if iter % print_every == 0:
+        #     print_loss_avg = print_loss_total / print_every
+        #     print_loss_total = 0
+        #     print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
+        #                                  iter, iter / n_iters * 100, print_loss_avg))
 
