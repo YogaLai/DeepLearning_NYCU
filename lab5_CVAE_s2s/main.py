@@ -89,7 +89,7 @@ the order should be : simple present, third person, present progressive, past
 def Gaussian_score(words):
     words_list = []
     score = 0
-    yourpath = ''#should be your directory of train.txt
+    yourpath = 'dataset/train.txt'#should be your directory of train.txt
     with open(yourpath,'r') as fp:
         for line in fp:
             word = line.split(' ')
@@ -181,7 +181,7 @@ def criterion(predict_distribution, target_distribution, mu, var):
     # mu, var = mu.data.numpy(), var.data.numpy()
     # q = np.random.normal(mu, var)
     q = torch.normal(mu, var)
-    uniform = torch.normal(torch.zeros(128),torch.ones(128))
+    uniform = torch.normal(torch.zeros(32),torch.ones(32))
     uniform = uniform.to(device)
     kl_loss = kl(q.view(-1),uniform)
     return reconstruction_loss, kl_loss
@@ -219,6 +219,7 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
+        print('Predict: ',output)
         print('Reconstruction loss: %f\nKL loss: %f\n---------------------' % (reconstruction_loss, kl_loss))
         
         # loss = train(word_tensor, tense_tensor, encoder,

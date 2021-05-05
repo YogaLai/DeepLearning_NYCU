@@ -8,10 +8,10 @@ SOS_token = 0
 EOS_token = 1
 # Hyper Parameters
 hidden_size = 256
-conditional_size = 128
+conditional_size = 8
 # The number of vocabulary
 vocab_size = 28
-latent_size = 128
+latent_size = 32
 teacher_forcing_ratio = 0.5
 
 
@@ -70,7 +70,7 @@ class CVAE(nn.Module):
         self.max_length = max_length
         self.hidden2latent = nn.Linear(hidden_size, latent_size)
         self.conditional2embbed = nn.Embedding(4, conditional_size)
-        self.latent2embedd = nn.Embedding(latent_size + conditional_size, hidden_size)
+        self.latent2embedd = nn.Linear(latent_size + conditional_size, hidden_size)
     
     def forward(self, input_tensor, tense_tensor):
         init_hidden = self.encoder.initHidden(hidden_size - conditional_size)
@@ -93,7 +93,7 @@ class CVAE(nn.Module):
         decoder_hidden = torch.cat((latent, c), dim=-1)
 
         # decoder_hidden = decoder_hidden.long()
-        # decoder_hidden = self.latent2embedd(decoder_hidden[0])
+        decoder_hidden = self.latent2embedd(decoder_hidden)
         decoder_cell = self.decoder.initCell()
         predict_distribution = torch.zeros(len(input_tensor), vocab_size, device=device)
         output=[]
