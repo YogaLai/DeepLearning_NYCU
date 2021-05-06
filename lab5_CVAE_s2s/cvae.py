@@ -110,4 +110,4 @@ class CVAE(nn.Module):
                     break
                 decoder_input = predict_class
 
-        return output,predict_distribution, mean, log_var
+        return output, predict_distribution, mean, log_var

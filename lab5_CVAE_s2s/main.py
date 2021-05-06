@@ -16,10 +16,12 @@ import matplotlib.ticker as ticker
 import numpy as np
 from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
-from dataloader import WordDataset
+from dataloader import WordDataset, WordTransoformer
 from torch.utils.data import DataLoader
 from cvae import CVAE
-
+from torch.utils.tensorboard import SummaryWriter
+import time
+import sys
 
 """========================================================================================
 The sample.py includes the following template functions:
@@ -49,13 +51,13 @@ EOS_token = 1
 #----------Hyper Parameters----------#
 hidden_size = 256
 lr = 0.05
+epochs = 10
 #The number of vocabulary
 vocab_size = 28
 teacher_forcing_ratio = 1.0
 empty_input_ratio = 0.1
 KLD_weight = 0.0
 LR = 0.05
-
 
 ################################
 #Example inputs of compute_bleu
@@ -102,63 +104,6 @@ def Gaussian_score(words):
     return score/len(words)
 
 
-    
-def train(word_tensor, tense_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=30):
-    encoder_hidden = encoder.initHidden()
-    encoder_cell = encoder.initCell()
-
-    encoder_optimizer.zero_grad()
-    decoder_optimizer.zero_grad()
-
-    word_tensor = word_tensor[0]
-    tense_tensor = tense_tensor[0]
-    word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
-
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
-
-    loss = 0
-
-    #----------sequence to sequence part for encoder----------#
-    input_tensor = torch.cat((word_tensor, tense_tensor))
-    for i in range(len(input_tensor)):
-        encoder_output, encoder_hidden, encoder_cell = encoder(input_tensor[i], encoder_hidden, encoder_cell)
-
-    decoder_input = torch.tensor([[SOS_token]], device=device)
-
-    decoder_hidden = encoder_hidden
-
-    use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-
-
-    #----------sequence to sequence part for decoder----------#
-    if use_teacher_forcing:
-        # Teacher forcing: Feed the target as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            loss += criterion(decoder_output, target_tensor[di])
-            decoder_input = target_tensor[di]  # Teacher forcing
-
-    else:
-        # Without teacher forcing: use its own predictions as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            topv, topi = decoder_output.topk(1)
-            decoder_input = topi.squeeze().detach()  # detach from history as input
-
-            loss += criterion(decoder_output, target_tensor[di])
-            if decoder_input.item() == EOS_token:
-                break
-
-    loss.backward()
-
-    encoder_optimizer.step()
-    decoder_optimizer.step()
-
-    return loss.item() / target_length
-
-
 def asMinutes(s):
     m = math.floor(s / 60)
     s -= m * 60
@@ -175,16 +120,45 @@ def timeSince(since, percent):
 def criterion(predict_distribution, target_distribution, mu, var):
     cross_entropy = nn.CrossEntropyLoss()
     reconstruction_loss = cross_entropy(predict_distribution, target_distribution)
-    kl = nn.KLDivLoss()
 
     # KL(N(mu, logvar)||N(0,1))
-    # mu, var = mu.data.numpy(), var.data.numpy()
-    # q = np.random.normal(mu, var)
-    q = torch.normal(mu, var)
-    uniform = torch.normal(torch.zeros(32),torch.ones(32))
-    uniform = uniform.to(device)
-    kl_loss = kl(q.view(-1),uniform)
+    # multivariate Gaussian kl
+    kl_loss = -0.5 * torch.sum(1 + var - mu**2 - var.exp())
+
     return reconstruction_loss, kl_loss
+
+def train(model, dataloader, optimizer, transformer):
+    KL_weight = 0 
+    total_BLEU_score = 0
+    total_rc_loss = 0
+    total_kl_loss = 0
+    model.train()
+    for times, (word_tensor, tense_tensor) in enumerate(dataloader):
+        optimizer.zero_grad()
+        word_tensor = word_tensor[0]
+        tense_tensor = tense_tensor[0]
+        word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
+        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
+        reconstruction_loss, kl_loss = criterion(predict_distribution, word_tensor.view(-1), mean, log_var)
+        if KL_weight >= 1:
+            KL_weight = 1 
+        else:
+            KL_weight = KL_weight + (times+1) * 0.01
+        loss = reconstruction_loss + KL_weight * kl_loss
+        total_rc_loss += reconstruction_loss
+        total_kl_loss += kl_loss
+        loss.backward()
+        optimizer.step()
+
+        predict = transformer.tensor2words(output)
+        target = transformer.tensor2words(word_tensor) 
+        total_BLEU_score += compute_bleu(predict, target)
+        if times % 200 == 0:
+            print('Predict: ',predict) 
+            print('Origin: ',target)
+            print('Reconstruction loss: %f\nKL loss: %f\n---------------------' % (reconstruction_loss, kl_loss))
+
+    return total_rc_loss.item(), total_kl_loss.item(), total_BLEU_score
 
 if __name__ == '__main__':
     dataset = WordDataset('train')
@@ -192,44 +166,23 @@ if __name__ == '__main__':
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
     model = CVAE(max_length)
     model = model.to(device)
+    if len(sys.argv) > 1:
+        state_dict = torch.load(sys.argv[1])
+        model.load_state_dict(state_dict)
     optimizer = optim.SGD(model.parameters(), lr=lr)
-    # encoder = EncoderRNN(vocab_size, hidden_size).to(device)
-    # decoder = DecoderRNN(hidden_size, vocab_size).to(device)
-
-    # start = time.time()
-    # plot_losses = []
-    # print_loss_total = 0  # Reset every print_every
-    # plot_loss_total = 0  # Reset every plot_every
-
-    # encoder_optimizer = optim.SGD(encoder.parameters(), lr=lr)
-    # decoder_optimizer = optim.SGD(decoder.parameters(), lr=lr)
-    # # training_pairs = [tensorsFromPair(random.choice(pairs))
-    # #                   for i in range(n_iters)]
-
-    # criterion = nn.CrossEntropyLoss()
-
-    for word_tensor, tense_tensor in dataloader:
-        optimizer.zero_grad()
-        word_tensor = word_tensor[0]
-        tense_tensor = tense_tensor[0]
-        word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
-        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
-        reconstruction_loss, kl_loss = criterion(predict_distribution, word_tensor.view(-1), mean, log_var)
-        loss = reconstruction_loss - kl_loss
-        loss.backward()
-        optimizer.step()
-
-        print('Predict: ',output)
-        print('Reconstruction loss: %f\nKL loss: %f\n---------------------' % (reconstruction_loss, kl_loss))
-        
-        # loss = train(word_tensor, tense_tensor, encoder,
-        #              decoder, encoder_optimizer, decoder_optimizer, criterion, max_length)
-        # print_loss_total += loss
-        # plot_loss_total += loss
-
-        # if iter % print_every == 0:
-        #     print_loss_avg = print_loss_total / print_every
-        #     print_loss_total = 0
-        #     print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-        #                                  iter, iter / n_iters * 100, print_loss_avg))
-
+    transformer = WordTransoformer()
+    dataset_size = len(dataloader.dataset)
+    writer = SummaryWriter('logs/')
+    
+    start = time.time()
+    for epoch in range(epochs):
+        rc_loss, kl_loss, bleu_score = train(model, dataloader, optimizer, transformer)
+        writer.add_scalar('Loss/reconstruction loss', rc_loss/dataset_size, epoch+1)
+        writer.add_scalar('Loss/KL loss', kl_loss/dataset_size, epoch+1)
+        writer.add_scalar('BLEU-4 score', bleu_score/dataset_size, epoch+1)
+        print('Epoch ', epoch+1)
+        print('Average Reconstruction loss: %f\n Average KL loss: %f' % (rc_loss/dataset_size, kl_loss/dataset_size))
+        print('Average BLEU-4 score: ', bleu_score/dataset_size)
+        torch.save(model.state_dict(), 'model/checkpoint' + str(epoch) + '.pkl')
+    end = time.time()
+    print('Total training time: ' + str((end - start)//60) + ' minutess')
