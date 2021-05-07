@@ -119,7 +119,7 @@ def criterion(predict_distribution, target_distribution, mu, logvar):
 
     return reconstruction_loss, kl_loss
 
-def train(model, dataloader, optimizer, transformer):
+def train(model, dataloader, optimizer, transformer, kl_weight):
     KL_weight = 0 
     total_BLEU_score = 0
     total_rc_loss = 0
@@ -201,6 +201,17 @@ def record_score(bleu_score, gaussian_score, predict_list, generate_words, datal
     print('Gaussian score: ', gaussian_score, file=gaussian_record)
     gaussian_record.close()
 
+def getKLWeight(kl_weight, dataset_size, strategy):
+    warmup = 5
+    kl_weight = min(1, kl_weight + 1./(warmup * dataset_size))
+    if strategy == 'cyclical':
+        if epoch % cycle == 0:
+            kl_weight = 0.1
+    elif strategy != 'mono':
+        print('Unkown strategy')
+        exit()
+
+    return kl_weight        
 
 if __name__ == '__main__':
     train_dataset = WordDataset('train')
@@ -223,8 +234,10 @@ if __name__ == '__main__':
     
     start = time.time()
     best_bleu_score = 0
+    kl_weight = 0.1
     for epoch in range(epochs):
-        rc_loss, kl_loss, bleu_score = train(model, train_dataloader, optimizer, transformer)
+        kl_weight = getKLWeight(kl_weight, trainset_size, 'mono')
+        rc_loss, kl_loss, bleu_score = train(model, train_dataloader, optimizer, transformer, kl_weight)
         average_bleu_score, predict_list, gaussian_score, generate_words = evaluate(model, test_dataloader, tense_list)
         writer.add_scalar('Loss/reconstruction loss', rc_loss/trainset_size, epoch+1)
         writer.add_scalar('Loss/KL loss', kl_loss/trainset_size, epoch+1)
