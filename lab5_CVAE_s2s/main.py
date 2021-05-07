@@ -46,18 +46,10 @@ You should check them before starting your lab.
 ========================================================================================"""
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SOS_token = 0
-EOS_token = 1
 #----------Hyper Parameters----------#
-hidden_size = 256
 lr = 0.05
 epochs = 10
-#The number of vocabulary
-vocab_size = 28
-teacher_forcing_ratio = 1.0
-empty_input_ratio = 0.1
-KLD_weight = 0.0
-LR = 0.05
+latent_size = 32
 
 ################################
 #Example inputs of compute_bleu
@@ -117,13 +109,13 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
-def criterion(predict_distribution, target_distribution, mu, var):
+def criterion(predict_distribution, target_distribution, mu, logvar):
     cross_entropy = nn.CrossEntropyLoss()
     reconstruction_loss = cross_entropy(predict_distribution, target_distribution)
 
     # KL(N(mu, logvar)||N(0,1))
     # multivariate Gaussian kl
-    kl_loss = -0.5 * torch.sum(1 + var - mu**2 - var.exp())
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
 
     return reconstruction_loss, kl_loss
 
@@ -160,25 +152,35 @@ def train(model, dataloader, optimizer, transformer):
 
     return total_rc_loss.item(), total_kl_loss.item(), total_BLEU_score
 
-def evaluate(model, dataloader, transformer):
-    model.eval()
-    total_BLEU_score = 0
-    predict_list = []
-    for times, (word_tensor, tense_tensor, target) in enumerate(dataloader):
-        word_tensor = word_tensor[0]
-        tense_tensor = tense_tensor[0]
-        target = target[0]
-        word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
-        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
+def evaluate(model, dataloader, tense_list):
+    with torch.no_grad():
+        model.eval()
+        total_BLEU_score = 0
+        predict_list = []
+        for times, (word_tensor, tense_tensor, target) in enumerate(dataloader):
+            word_tensor = word_tensor[0]
+            tense_tensor = tense_tensor[0]
+            target = target[0]
+            word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
+            output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
 
-        predict = transformer.tensor2words(output)
-        total_BLEU_score += compute_bleu(predict, target)
+            predict = transformer.tensor2words(output)
+            total_BLEU_score += compute_bleu(predict, target)
+            
+            predict_list.append(predict)
         
-        predict_list.append(predict)
+        # Gaussian score
+        words = []
+        for i in range(100):
+            latent = torch.randn(1, 1, latent_size).to(device)
+            words.extend(model.generate_words(latent, tense_list))
+        for i in range(len(words)):
+            words[i] = transformer.tensor2words(words[i])
+        gaussian_score = Gaussian_score(words)
       
-    return total_BLEU_score / len(dataloader.dataset), predict_list
+    return total_BLEU_score/len(dataloader.dataset), predict_list, gaussian_score, words
 
-def record_bleu(bleu_score, predict_list, dataloader, transformer):
+def record_score(bleu_score, gaussian_score, predict_list, generate_words, dataloader, transformer):
     bleu_record = open('bleu_record.txt', 'w')
     for i, (word_tensor, tense_tensor, target) in enumerate(dataloader):
         word_tensor = word_tensor[0]
@@ -192,6 +194,13 @@ def record_bleu(bleu_score, predict_list, dataloader, transformer):
 
     print('Average BLEI-4 score: ', bleu_score, file=bleu_record)
     bleu_record.close()
+    
+    gaussian_record = open('gaussian_record.txt', 'w')
+    for i in range(0,len(generate_words),4):
+        print(generate_words[i] + ', ' + generate_words[i+1] + ', ' + generate_words[i+2] + ', ' + generate_words[i+3], file=gaussian_record)
+    print('Gaussian score: ', gaussian_score, file=gaussian_record)
+    gaussian_record.close()
+
 
 if __name__ == '__main__':
     train_dataset = WordDataset('train')
@@ -199,6 +208,8 @@ if __name__ == '__main__':
     max_length = train_dataset.max_length + 5
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    tense_list = test_dataloader.dataset.tense2idx.values()
+    
     model = CVAE(max_length)
     model = model.to(device)
     if len(sys.argv) > 1:
@@ -214,7 +225,7 @@ if __name__ == '__main__':
     best_bleu_score = 0
     for epoch in range(epochs):
         rc_loss, kl_loss, bleu_score = train(model, train_dataloader, optimizer, transformer)
-        average_bleu_score, predict_list = evaluate(model, test_dataloader, transformer)
+        average_bleu_score, predict_list, gaussian_score, generate_words = evaluate(model, test_dataloader, tense_list)
         writer.add_scalar('Loss/reconstruction loss', rc_loss/trainset_size, epoch+1)
         writer.add_scalar('Loss/KL loss', kl_loss/trainset_size, epoch+1)
         writer.add_scalar('BLEU-4 score', average_bleu_score, epoch+1)
@@ -223,7 +234,7 @@ if __name__ == '__main__':
         print('Average BLEU-4 score: ', average_bleu_score)
         
         if average_bleu_score > best_bleu_score:
-            record_bleu(average_bleu_score, predict_list, test_dataloader, transformer)
+            record_score(average_bleu_score, gaussian_score, predict_list, generate_words, test_dataloader, transformer)
 
         torch.save(model.state_dict(), 'model/checkpoint' + str(epoch) + '.pkl')
     end = time.time()

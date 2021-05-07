@@ -111,3 +111,30 @@ class CVAE(nn.Module):
                 decoder_input = predict_class
 
         return output, predict_distribution, mean, log_var
+    
+    def generate_words(self, latent, tense_list):
+        word_list = []
+        for tense in tense_list:  # 4 tense
+            tense_tensor = torch.tensor(tense, device=device).view(-1,1)
+            c = self.conditional2embbed(tense_tensor)
+            decoder_input = torch.tensor([[SOS_token]], device=device)
+            decoder_hidden = torch.cat((latent, c), dim=-1)
+
+            # decoder_hidden = decoder_hidden.long()
+            decoder_hidden = self.latent2embedd(decoder_hidden)
+            decoder_cell = self.decoder.initCell()
+            predict_word=[]
+
+            for i in range(self.max_length):
+                decoder_output, decoder_hidden, decoder_cell = self.decoder(decoder_input, decoder_hidden, decoder_cell)
+                predict_class = torch.argmax(decoder_output)
+                predict_word.append(predict_class)
+                use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+                if predict_class.item() == EOS_token:
+                    break
+                decoder_input = predict_class
+            
+            word_list.append(predict_word)
+
+        return word_list
+
