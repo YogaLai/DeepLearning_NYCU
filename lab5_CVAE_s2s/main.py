@@ -61,7 +61,7 @@ lr = 0.05
 if args.epoch != None:
     epochs = args.epoch
 else:    
-    epochs = 200
+    epochs = 100
 latent_size = 32
 cycle = 10
 kl_weight = args.kl_start
@@ -189,9 +189,10 @@ def evaluate(model, dataloader, tense_list):
         words = []
         for i in range(100):
             latent = torch.randn(1, 1, latent_size).to(device)
-            words.extend(model.generate_words(latent, tense_list))
-        for i in range(len(words)):
-            words[i] = transformer.tensor2words(words[i])
+            words.append(model.generate_words(latent, tense_list))
+        for word_list in words:
+            for i in range(len(word_list)):
+                word_list[i] = transformer.tensor2words(word_list[i])
         gaussian_score = Gaussian_score(words)
       
     return total_BLEU_score/len(dataloader.dataset), predict_list, gaussian_score, words
@@ -212,8 +213,13 @@ def record_score(bleu_score, gaussian_score, predict_list, generate_words, datal
     bleu_record.close()
     
     gaussian_record = open('gaussian_record.txt', 'w')
-    for i in range(0,len(generate_words),4):
-        print(generate_words[i] + ', ' + generate_words[i+1] + ', ' + generate_words[i+2] + ', ' + generate_words[i+3], file=gaussian_record)
+    for word_list in generate_words:
+        for i, word in enumerate(word_list):
+            if (i+1) % 4 != 0:
+                word += ', '
+            else:
+                word +='\n'
+            print(word, file=gaussian_record, end='')
     print('Gaussian score: ', gaussian_score, file=gaussian_record)
     gaussian_record.close()
 
@@ -265,10 +271,15 @@ if __name__ == '__main__':
         writer.add_scalar('Loss/KL loss', kl_loss/trainset_size, epoch+1)
         writer.add_scalar('BLEU-4 score', average_bleu_score, epoch+1)
         writer.add_scalar('Setting parameter/KL weight', kl_weight, epoch+1)
-        writer.add_scalar('Setting parameter/KL weight', teacher_forcing_ratio, epoch+1)
+        writer.add_scalar('Setting parameter/teacher forcing ratio', teacher_forcing_ratio, epoch+1)
+        writer.add_scalars('Comparison', {'rc_loss': rc_loss/trainset_size, 
+                                          'kl_loss': kl_loss/trainset_size, 
+                                          'BLEU-4 socre': average_bleu_score,
+                                          'kl_weight': kl_weight,
+                                          'teacher_ratio': teacher_forcing_ratio}, epoch+1)
         print('Epoch ', epoch+1)
         print('Average Reconstruction loss: %f\n Average KL loss: %f' % (rc_loss/trainset_size, kl_loss/trainset_size))
-        print('Average BLEU-4 score: ', average_bleu_score)
+        print('Average BLEU-4 score: %f\n' % average_bleu_score)
         
         if average_bleu_score > best_bleu_score:
             record_score(average_bleu_score, gaussian_score, predict_list, generate_words, test_dataloader, transformer)
