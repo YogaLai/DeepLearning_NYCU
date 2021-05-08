@@ -22,6 +22,7 @@ from cvae import CVAE
 from torch.utils.tensorboard import SummaryWriter
 import time
 import sys
+import argparse
 
 """========================================================================================
 The sample.py includes the following template functions:
@@ -45,11 +46,25 @@ There are some useful tips listed in the lab assignment.
 You should check them before starting your lab.
 ========================================================================================"""
 
+parser = argparse.ArgumentParser(description='s2s CVAE model')
+parser.add_argument('--epoch', type=int)
+parser.add_argument('--load_model', type=str)
+# annealing paramters
+parser.add_argument('--warmup', type=int, default=5)
+parser.add_argument('--kl_start', type=float, default=0.1)
+parser.add_argument('--annealing', type=str, default='mono')
+args = parser.parse_args()
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #----------Hyper Parameters----------#
 lr = 0.05
-epochs = 10
+if args.epoch != None:
+    epochs = args.epoch
+else:    
+    epochs = 200
 latent_size = 32
+cycle = 10
+kl_weight = args.kl_start
 
 ################################
 #Example inputs of compute_bleu
@@ -119,8 +134,9 @@ def criterion(predict_distribution, target_distribution, mu, logvar):
 
     return reconstruction_loss, kl_loss
 
-def train(model, dataloader, optimizer, transformer, kl_weight):
-    KL_weight = 0 
+def train(model, dataloader, optimizer, transformer):
+    global kl_weight
+    # KL_weight = 0 
     total_BLEU_score = 0
     total_rc_loss = 0
     total_kl_loss = 0
@@ -130,13 +146,13 @@ def train(model, dataloader, optimizer, transformer, kl_weight):
         word_tensor = word_tensor[0]
         tense_tensor = tense_tensor[0]
         word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
-        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
+        output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor, teacher_forcing_ratio)
         reconstruction_loss, kl_loss = criterion(predict_distribution, word_tensor.view(-1), mean, log_var)
-        if KL_weight >= 1:
-            KL_weight = 1 
-        else:
-            KL_weight = KL_weight + (times+1) * 0.01
-        loss = reconstruction_loss + KL_weight * kl_loss
+        # if kl_weight >= 1:
+        #     kl_weight = 1
+        # else:
+        #     kl_weight += times * annealing_rate
+        loss = reconstruction_loss + kl_weight * kl_loss
         total_rc_loss += reconstruction_loss
         total_kl_loss += kl_loss
         loss.backward()
@@ -162,7 +178,7 @@ def evaluate(model, dataloader, tense_list):
             tense_tensor = tense_tensor[0]
             target = target[0]
             word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
-            output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor)
+            output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor, teacher_forcing_ratio)
 
             predict = transformer.tensor2words(output)
             total_BLEU_score += compute_bleu(predict, target)
@@ -201,17 +217,18 @@ def record_score(bleu_score, gaussian_score, predict_list, generate_words, datal
     print('Gaussian score: ', gaussian_score, file=gaussian_record)
     gaussian_record.close()
 
-def getKLWeight(kl_weight, dataset_size, strategy):
-    warmup = 5
-    kl_weight = min(1, kl_weight + 1./(warmup * dataset_size))
-    if strategy == 'cyclical':
-        if epoch % cycle == 0:
-            kl_weight = 0.1
-    elif strategy != 'mono':
-        print('Unkown strategy')
-        exit()
+def get_kl_weight(epoch):
+    epoch += 1
+    slope = 0.01
+    scope = (1.0/slope)*2
+    weight = (epoch % scope) * slope
+    if weight > 1:
+        weight = 1
+    return weight
 
-    return kl_weight        
+def getTeacherRatio(epoch):
+    # from 1 to 0
+    return 1.-(1./(epochs-1))*(epoch)
 
 if __name__ == '__main__':
     train_dataset = WordDataset('train')
@@ -223,8 +240,8 @@ if __name__ == '__main__':
     
     model = CVAE(max_length)
     model = model.to(device)
-    if len(sys.argv) > 1:
-        state_dict = torch.load(sys.argv[1])
+    if args.load_model != None:
+        state_dict = torch.load(args.loadmodel)
         model.load_state_dict(state_dict)
     optimizer = optim.SGD(model.parameters(), lr=lr)
     transformer = WordTransoformer()
@@ -234,14 +251,21 @@ if __name__ == '__main__':
     
     start = time.time()
     best_bleu_score = 0
-    kl_weight = 0.1
+    annealing_rate = 0.01
+    # annealing_rate = 1./(args.warmup * len(train_dataloader.dataset))
+    print('Annealing: ', args.annealing)
     for epoch in range(epochs):
-        kl_weight = getKLWeight(kl_weight, trainset_size, 'mono')
-        rc_loss, kl_loss, bleu_score = train(model, train_dataloader, optimizer, transformer, kl_weight)
+        # if args.annealing == 'cyclical' and epoch % cycle == 0:
+        #     kl_weight = args.kl_start
+        kl_weight = get_kl_weight(epoch)
+        teacher_forcing_ratio = getTeacherRatio(epoch)
+        rc_loss, kl_loss, bleu_score = train(model, train_dataloader, optimizer, transformer)
         average_bleu_score, predict_list, gaussian_score, generate_words = evaluate(model, test_dataloader, tense_list)
         writer.add_scalar('Loss/reconstruction loss', rc_loss/trainset_size, epoch+1)
         writer.add_scalar('Loss/KL loss', kl_loss/trainset_size, epoch+1)
         writer.add_scalar('BLEU-4 score', average_bleu_score, epoch+1)
+        writer.add_scalar('Setting parameter/KL weight', kl_weight, epoch+1)
+        writer.add_scalar('Setting parameter/KL weight', teacher_forcing_ratio, epoch+1)
         print('Epoch ', epoch+1)
         print('Average Reconstruction loss: %f\n Average KL loss: %f' % (rc_loss/trainset_size, kl_loss/trainset_size))
         print('Average BLEU-4 score: ', average_bleu_score)

@@ -12,7 +12,6 @@ conditional_size = 8
 # The number of vocabulary
 vocab_size = 28
 latent_size = 32
-teacher_forcing_ratio = 0.5
 
 
 #Encoder
@@ -72,7 +71,7 @@ class CVAE(nn.Module):
         self.conditional2embbed = nn.Embedding(4, conditional_size)
         self.latent2embedd = nn.Linear(latent_size + conditional_size, hidden_size)
     
-    def forward(self, input_tensor, tense_tensor):
+    def forward(self, input_tensor, tense_tensor, teacher_forcing_ratio):
         init_hidden = self.encoder.initHidden(hidden_size - conditional_size)
         c = self.conditional2embbed(tense_tensor)
         encoder_hidden = torch.cat((init_hidden, c),dim=-1)
@@ -129,7 +128,6 @@ class CVAE(nn.Module):
                 decoder_output, decoder_hidden, decoder_cell = self.decoder(decoder_input, decoder_hidden, decoder_cell)
                 predict_class = torch.argmax(decoder_output)
                 predict_word.append(predict_class)
-                use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
                 if predict_class.item() == EOS_token:
                     break
                 decoder_input = predict_class
