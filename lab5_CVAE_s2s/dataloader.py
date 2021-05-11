@@ -65,7 +65,7 @@ class WordDataset(Dataset):
                 self.test_tense[i] = self.tense2idx[self.test_tense[i]]
 
     def __len__(self):
-        return len(self.tense)
+        return len(self.words)
 
     def __getitem__(self, index):
         word = self.transformer.words2tensor(self.words[index])

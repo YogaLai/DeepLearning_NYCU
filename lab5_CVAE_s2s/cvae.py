@@ -58,7 +58,7 @@ def reparameterize(mean, log_var):
     """
     reparameterization trick
     """
-    eps = torch.randn(latent_size, device=device)
+    eps = torch.randn_like(log_var, device=device)
     return eps * torch.exp(0.5 * log_var) + mean
 
 class CVAE(nn.Module):
@@ -67,7 +67,8 @@ class CVAE(nn.Module):
         self.encoder = EncoderRNN(vocab_size, hidden_size)
         self.decoder = DecoderRNN(hidden_size, vocab_size)
         self.max_length = max_length
-        self.hidden2latent = nn.Linear(hidden_size, latent_size)
+        self.hidden2mean = nn.Linear(hidden_size, latent_size)
+        self.hidden2logvar = nn.Linear(hidden_size, latent_size)
         self.conditional2embbed = nn.Embedding(4, conditional_size)
         self.latent2embedd = nn.Linear(latent_size + conditional_size, hidden_size)
     
@@ -76,15 +77,15 @@ class CVAE(nn.Module):
         c = self.conditional2embbed(tense_tensor)
         encoder_hidden = torch.cat((init_hidden, c),dim=-1)
         encoder_cell = self.encoder.initCell()
-        encoder_outputs = torch.zeros(self.max_length, self.encoder.hidden_size, device=device)
+        # encoder_outputs = torch.zeros(self.max_length, self.encoder.hidden_size, device=device)
         
         #----------sequence to sequence part for encoder----------#
         for i in range(len(input_tensor)):
-            encoder_output, encoder_hidden, encoder_cell = self.encoder(input_tensor[i], encoder_hidden, encoder_cell)
+            _, encoder_hidden, encoder_cell = self.encoder(input_tensor[i], encoder_hidden, encoder_cell)
         
         # sample point
-        mean = self.hidden2latent(encoder_hidden)
-        log_var = self.hidden2latent(encoder_hidden)
+        mean = self.hidden2mean(encoder_hidden)
+        log_var = self.hidden2logvar(encoder_hidden)
         latent = reparameterize(mean, log_var)
 
         #----------sequence to sequence part for encoder----------#
@@ -96,12 +97,12 @@ class CVAE(nn.Module):
         decoder_cell = self.decoder.initCell()
         predict_distribution = torch.zeros(len(input_tensor), vocab_size, device=device)
         output=[]
+        use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
         for i in range(len(input_tensor)):
             decoder_output, decoder_hidden, decoder_cell = self.decoder(decoder_input, decoder_hidden, decoder_cell)
             predict_distribution[i] = decoder_output
             predict_class = torch.argmax(decoder_output)
             output.append(predict_class)
-            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
             if use_teacher_forcing:
                 decoder_input = input_tensor[i]
             else:
