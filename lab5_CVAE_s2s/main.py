@@ -171,7 +171,7 @@ def evaluate(model, dataloader, tense_list):
             target = target[0]
             word_tensor, tense_tensor = word_tensor.to(device), tense_tensor.to(device)
             # inference without teacher forcing => teacher forcing ratio sets -1
-            output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor, -1)
+            output, predict_distribution, mean, log_var = model(word_tensor, tense_tensor, -1, inference=True)
 
             predict = transformer.tensor2words(output)
             total_BLEU_score += compute_bleu(predict, target)

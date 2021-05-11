@@ -72,7 +72,12 @@ class CVAE(nn.Module):
         self.conditional2embbed = nn.Embedding(4, conditional_size)
         self.latent2embedd = nn.Linear(latent_size + conditional_size, hidden_size)
     
-    def forward(self, input_tensor, tense_tensor, teacher_forcing_ratio):
+    def forward(self, input_tensor, tense_tensor, teacher_forcing_ratio, inference=False):
+        if inference:
+            output_length = self.max_length
+        else:
+            output_length = len(input_tensor)
+
         init_hidden = self.encoder.initHidden(hidden_size - conditional_size)
         c = self.conditional2embbed(tense_tensor)
         encoder_hidden = torch.cat((init_hidden, c),dim=-1)
@@ -95,10 +100,10 @@ class CVAE(nn.Module):
         # decoder_hidden = decoder_hidden.long()
         decoder_hidden = self.latent2embedd(decoder_hidden)
         decoder_cell = self.decoder.initCell()
-        predict_distribution = torch.zeros(len(input_tensor), vocab_size, device=device)
+        predict_distribution = torch.zeros(output_length, vocab_size, device=device)
         output=[]
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-        for i in range(len(input_tensor)):
+        for i in range(output_length):
             decoder_output, decoder_hidden, decoder_cell = self.decoder(decoder_input, decoder_hidden, decoder_cell)
             predict_distribution[i] = decoder_output
             predict_class = torch.argmax(decoder_output)
