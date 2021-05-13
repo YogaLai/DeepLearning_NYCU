@@ -42,7 +42,6 @@ class DecoderRNN(nn.Module):
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.lstm = nn.LSTM(hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden, cell):
         output = self.embedding(input).view(1, 1, -1)
