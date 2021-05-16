@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
+import torch.optim as optim
 
 
 class ReplayMemory:
@@ -35,13 +36,15 @@ class ReplayMemory:
 
 
 class Net(nn.Module):
-    def __init__(self, state_dim=8, action_dim=4, hidden_dim=32):
+    def __init__(self, state_dim=8, action_dim=4, hidden_dim=[400,300]):
         super().__init__()
         ## TODO ##
         self.layers = nn.Sequential(
-            nn.Linear(state_dim,hidden_dim),
+            nn.Linear(state_dim,hidden_dim[0]),
             nn.ReLU(),
-            nn.Linear(hidden_dim,action_dim)
+            nn.Linear(hidden_dim[0],hidden_dim[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dim[1], action_dim)
         )
 
     def forward(self, x):
@@ -57,8 +60,7 @@ class DQN:
         # initialize target network
         self._target_net.load_state_dict(self._behavior_net.state_dict())
         ## TODO ##
-        # self._optimizer = ?
-        raise NotImplementedError
+        self._optimizer = optim.Adam(self._behavior_net.parameters(), lr=args.lr)
         # memory
         self._memory = ReplayMemory(capacity=args.capacity)
 
@@ -72,7 +74,12 @@ class DQN:
     def select_action(self, state, epsilon, action_space):
         '''epsilon-greedy based on behavior network'''
          ## TODO ##
-        raise NotImplementedError
+        if random.random() < epsilon:
+            return action_space.sample()
+        else:
+            state = torch.from_numpy(state).view(-1,1).to(self.device)
+            best_action = state.max().item()
+            return best_action
 
     def append(self, state, action, reward, next_state, done):
         self._memory.append(state, [action], [reward / 10], next_state,
