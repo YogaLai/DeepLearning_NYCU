@@ -198,6 +198,7 @@ def test(args, env, agent, writer):
             total_reward += reward
             if done:
                 writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
+                print('Episode Reward', total_reward)
                 rewards.append(total_reward)
                 break
     print('Average Reward', np.mean(rewards))
@@ -232,11 +233,17 @@ def main():
     ## main ##
     env = gym.make('LunarLander-v2')
     agent = DQN(args)
-    log_path = args.logdir + '/' + args.exp_name
+    if args.exp_name != None:
+        log_path = args.logdir + '/' + args.exp_name
+    else:
+        log_path = args.logdir
     writer = SummaryWriter(log_path)
     if not args.test_only:
         train(args, env, agent, writer)
         agent.save(args.model)
+    random.seed()
+    args.seed = random.randint(1,20200520)
+    print('Ramdom seed', args.seed)
     agent.load(args.model)
     test(args, env, agent, writer)
 
