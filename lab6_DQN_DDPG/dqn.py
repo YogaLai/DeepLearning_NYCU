@@ -78,8 +78,8 @@ class DQN:
             return action_space.sample()
         else:
             with torch.no_grad():
-                state1 = torch.from_numpy(state).view(1,-1).to(self.device)
-                value = self._behavior_net(state1)
+                state = torch.from_numpy(state).view(1,-1).to(self.device)
+                value = self._behavior_net(state)
                 best_action = value.max(dim=1)[1].item()  # [1] => get max action index
                 return best_action
 
@@ -147,13 +147,14 @@ def train(args, env, agent, writer):
     for episode in range(args.episode):
         total_reward = 0
         state = env.reset()
+        epsilon = max(epsilon * args.eps_decay, args.eps_min)
         for t in itertools.count(start=1):
             # select action
             if total_steps < args.warmup:
                 action = action_space.sample()
             else:
                 action = agent.select_action(state, epsilon, action_space)
-                epsilon = max(epsilon * args.eps_decay, args.eps_min)
+                # epsilon = max(epsilon * args.eps_decay, args.eps_min)
             # execute action
             next_state, reward, done, _ = env.step(action)
             # store transition
@@ -201,7 +202,7 @@ def test(args, env, agent, writer):
                 print('Episode Reward', total_reward)
                 rewards.append(total_reward)
                 break
-    print('Average Reward', np.mean(rewards))
+    print('\nAverage Reward', np.mean(rewards))
     env.close()
 
 
