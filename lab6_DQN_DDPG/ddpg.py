@@ -11,7 +11,9 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.modules.activation import Tanh
 from torch.utils.tensorboard import SummaryWriter
+import torch.optim as optim
 
 
 class GaussianNoise:
@@ -39,18 +41,27 @@ class ReplayMemory:
     def sample(self, batch_size, device):
         '''sample a batch of transition tensors'''
         ## TODO ##
-        raise NotImplementedError
+        transitions = random.sample(self.buffer, batch_size)
+        return (torch.tensor(x, dtype=torch.float, device=device)
+                for x in zip(*transitions))
 
 
 class ActorNet(nn.Module):
     def __init__(self, state_dim=8, action_dim=2, hidden_dim=(400, 300)):
         super().__init__()
         ## TODO ##
-        raise NotImplementedError
+        self.layers = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dim[0],hidden_dim[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dim[1], action_dim),
+            nn.Tanh()
+        )
 
     def forward(self, x):
         ## TODO ##
-        raise NotImplementedError
+        return self.layers(x)
 
 
 class CriticNet(nn.Module):
@@ -84,9 +95,8 @@ class DDPG:
         self._target_actor_net.load_state_dict(self._actor_net.state_dict())
         self._target_critic_net.load_state_dict(self._critic_net.state_dict())
         ## TODO ##
-        # self._actor_opt = ?
-        # self._critic_opt = ?
-        raise NotImplementedError
+        self._actor_opt = optim.Adam(self._actor_net.parameters(), lr=args.lra)
+        self._critic_opt = optim.Adam(self._critic_net.parameters(), lr=args.lrc)
         # action noise
         self._action_noise = GaussianNoise(dim=2)
         # memory
@@ -101,7 +111,13 @@ class DDPG:
     def select_action(self, state, noise=True):
         '''based on the behavior (actor) network and exploration noise'''
         ## TODO ##
-        raise NotImplementedError
+        with torch.no_grad():
+            state = torch.from_numpy(state).view(1,-1).to(self.device)
+            value = self._actor_net(state)
+            if noise:
+                noise = torch.from_numpy(self._action_noise.sample()).view(1,-1).to(self.device)
+                value += noise
+        return value.cpu().numpy().squeeze()
 
     def append(self, state, action, reward, next_state, done):
         self._memory.append(state, action, [reward / 100], next_state,
@@ -127,16 +143,14 @@ class DDPG:
         ## update critic ##
         # critic loss
         ## TODO ##
-        # q_value = ?
-        # with torch.no_grad():
-        #    a_next = ?
-        #    q_next = ?
-        #    q_target = ?
-        # criterion = ?
-        # critic_loss = criterion(q_value, q_target)
-        raise NotImplementedError
+        q_value = critic_net(state,action)
+        with torch.no_grad():
+           a_next = target_actor_net(next_state)
+           q_next = target_critic_net(next_state, a_next)
+           q_target = reward + gamma * q_next *(1-done)
+        criterion = nn.MSELoss()
+        critic_loss = criterion(q_value, q_target)
         # optimize critic
-        actor_net.zero_grad()
         critic_net.zero_grad()
         critic_loss.backward()
         critic_opt.step()
@@ -144,12 +158,11 @@ class DDPG:
         ## update actor ##
         # actor loss
         ## TODO ##
-        # action = ?
-        # actor_loss = ?
-        raise NotImplementedError
+        action = actor_net(state)
+        actor_loss = - critic_net(state,action).mean()
         # optimize actor
         actor_net.zero_grad()
-        critic_net.zero_grad()
+        critic_net.zero_grad()  
         actor_loss.backward()
         actor_opt.step()
 
@@ -158,7 +171,7 @@ class DDPG:
         '''update target network by _soft_ copying from behavior network'''
         for target, behavior in zip(target_net.parameters(), net.parameters()):
             ## TODO ##
-            raise NotImplementedError
+            target.data.copy_(tau * behavior.data + (1 - tau) * target.data)
 
     def save(self, model_path, checkpoint=False):
         if checkpoint:
@@ -201,7 +214,7 @@ def train(args, env, agent, writer):
             if total_steps < args.warmup:
                 action = env.action_space.sample()
             else:
-                action = agent.select_action(state)
+                action = agent.select_action(state,False)
             # execute action
             next_state, reward, done, _ = env.step(action)
             # store transition
@@ -235,12 +248,19 @@ def test(args, env, agent, writer):
         env.seed(seed)
         state = env.reset()
         ## TODO ##
-        # ...
-        #     if done:
-        #         writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
-        #         ...
-        raise NotImplementedError
-    print('Average Reward', np.mean(rewards))
+        for t in itertools.count(start=1):
+        # select action
+            action = agent.select_action(state,False)
+            # execute action
+            next_state, reward, done, _ = env.step(action)
+            state = next_state
+            total_reward += reward
+            if done:
+                # writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
+                print('Episode Reward', total_reward)
+                rewards.append(total_reward)
+                break
+    print('\nAverage Reward', np.mean(rewards))
     env.close()
 
 
@@ -250,6 +270,7 @@ def main():
     parser.add_argument('-d', '--device', default='cuda')
     parser.add_argument('-m', '--model', default='ddpg.pth')
     parser.add_argument('--logdir', default='log/ddpg')
+    parser.add_argument('--exp_name', type=str)
     # train
     parser.add_argument('--warmup', default=10000, type=int)
     parser.add_argument('--episode', default=1200, type=int)
@@ -267,8 +288,14 @@ def main():
 
     ## main ##
     env = gym.make('LunarLanderContinuous-v2')
+    random.seed()
+    args.seed = random.randint(1,20200520)
     agent = DDPG(args)
-    writer = SummaryWriter(args.logdir)
+    if args.exp_name != None:
+        log_path = args.logdir + '/' + args.exp_name
+    else:
+        log_path = args.logdir
+    writer = SummaryWriter(log_path)
     if not args.test_only:
         train(args, env, agent, writer)
         agent.save(args.model)

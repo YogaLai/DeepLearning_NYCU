@@ -36,15 +36,15 @@ class ReplayMemory:
 
 
 class Net(nn.Module):
-    def __init__(self, state_dim=8, action_dim=4, hidden_dim=[400,300]):
+    def __init__(self, state_dim=8, action_dim=4, hidden_dim=32):
         super().__init__()
         ## TODO ##
         self.layers = nn.Sequential(
-            nn.Linear(state_dim,hidden_dim[0]),
+            nn.Linear(state_dim,hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim[0],hidden_dim[1]),
+            nn.Linear(hidden_dim,hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim[1], action_dim)
+            nn.Linear(hidden_dim, action_dim)
         )
 
     def forward(self, x):
