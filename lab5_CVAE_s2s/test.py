@@ -73,7 +73,7 @@ tense_list = dataloader.dataset.tense2idx.values()
 transformer = WordTransoformer()
 
 # Epoch 57 is the best
-loadmodel = sys.argv[1]
+loadmodel = 'model/cycle_500/checkpoint57.pkl'
 model = CVAE(max_length)
 model = model.cuda()
 state_dict = torch.load(loadmodel)
