@@ -1,3 +1,4 @@
+from cINN import test
 from dataloader import ICLEVRLoader, get_iCLEVR_data
 import torch
 import argparse
@@ -7,6 +8,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from evaluator import evaluation_model
 import numpy as np
+import torchvision
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=64)
@@ -135,6 +137,8 @@ if __name__ == '__main__':
             test_condition = torch.tensor(test_condition, dtype=torch.float32)
             test_condition = test_condition.to(device)
             generate_img = netG(fixed_noise, test_condition)
+        images_concat = torchvision.utils.make_grid(generate_img, nrow=int(len(test_condition.shape[0] ** 0.5)))
+        torchvision.utils.save_image(images_concat, 'cGAN/epoch_{}.png'.format(epoch))
         score = evaluation_model.eval(generate_img, test_condition)
         score_list.append(score)
         print('Score: ', score)
