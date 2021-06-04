@@ -72,6 +72,8 @@ if __name__ == '__main__':
     for epoch in range(num_epochs):
         total_lossD = 0 
         total_lossG = 0 
+        netG.train()
+        netD.train()
         for i, data in enumerate(train_loader):
             condition = data[1].to(device)
             ############################
@@ -137,8 +139,8 @@ if __name__ == '__main__':
             test_condition = torch.tensor(test_condition, dtype=torch.float32)
             test_condition = test_condition.to(device)
             generate_img = netG(fixed_noise, test_condition)
-        images_concat = torchvision.utils.make_grid(generate_img, nrow=int(len(test_condition.shape[0] ** 0.5)))
-        torchvision.utils.save_image(images_concat, 'cGAN/epoch_{}.png'.format(epoch))
+        images_concat = torchvision.utils.make_grid(generate_img, nrow=8, normalize=True)
+        torchvision.utils.save_image(images_concat, 'visualization/cGAN/epoch_{}.png'.format(epoch))
         score = evaluation_model.eval(generate_img, test_condition)
         score_list.append(score)
         print('Score: ', score)

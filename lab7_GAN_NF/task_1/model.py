@@ -6,7 +6,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.H, self.W, self.C = img_shape
         self.condtion_embedd = nn.Sequential(
-            nn.Linear(24, self.C * self.H * self.W),
+            nn.Linear(24, 1 * self.H * self.W),
             nn.LeakyReLU()
         )
         self.main = nn.Sequential(
@@ -32,7 +32,7 @@ class Discriminator(nn.Module):
 
     def forward(self, input, condition):
         condition = self.condtion_embedd(condition)
-        condition = condition.view(-1, self.C, self.H, self.W)
+        condition = condition.view(-1, 1, self.H, self.W)
         input = torch.cat((input,condition), axis=1)
         return self.main(input)
 
