@@ -103,9 +103,10 @@ class _Glow(nn.Module):
                 x, sldj = step(x, x_cond, sldj, reverse)
 
         if self.next is not None:
+            img_shape = x.shape
             x = squeeze(x)
-            # x_cond = squeeze(x_cond)
             x_cond = squeeze(x_cond)
+            # x_cond = condition_squeeze(x_cond, img_shape)
             x, x_split = x.chunk(2, dim=1)
             x, sldj = self.next(x, x_cond, sldj, reverse)
             x = torch.cat((x, x_split), dim=1)
@@ -167,13 +168,18 @@ def squeeze(x, reverse=False):
     return x
 
 def condition_squeeze(cond, img_shape, reverse=False):
-    nc = 200 # condition dimension
+    b, c, h, w = img_shape
     embed = nn.Sequential(
-        nn.Linear(24, nc),
+        nn.Linear(24, 1 * h * w),
         nn.ReLU()
-    )
+    ).cuda()
     cond = embed(cond)
-    x = x.view(b, c, h // 2, 2, w // 2, 2)
+    cond = cond.view(b, 1, h//2, 2, w//2, 2)
+    cond = cond.permute(0, 1, 3, 5, 2, 4).contiguous()
+    cond = cond.view(b, 1 * 2 * 2, h // 2, w // 2)
+    # x = x.view(b, c, h // 2, 2, w // 2, 2)
+
+    return cond
 
 if __name__ == "__main__":
     model = Glow(num_channels=128, num_levels=3, num_steps=6)

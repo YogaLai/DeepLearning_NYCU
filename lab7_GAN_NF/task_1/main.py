@@ -12,7 +12,7 @@ import torchvision
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=64)
-parser.add_argument('--num_epochs', type=int, default=150)
+parser.add_argument('--num_epochs', type=int, default=200)
 parser.add_argument('--exp_name', type=str, default='')
 args = parser.parse_args()
 
@@ -49,6 +49,12 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     netG = Generator(nc, nz, ngf).to(device)
     netD = Discriminator((64,64,3), ndf).to(device)
+
+    # ckt = torch.load('savemodel/checkpoint_149.tar')
+    # netG.load_state_dict(ckt['generator_state_dict'])
+    # netD.load_state_dict(ckt['discriminator_state_dict'])
+    # epoch = ckt['epoch'] + 1
+    epoch = 0
     netG.apply(weights_init)
     netD.apply(weights_init)
     evaluation_model = evaluation_model()
@@ -61,16 +67,18 @@ if __name__ == '__main__':
     fake_label = 0.
 
     optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
-    optimizerD = optim.SGD(netD.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
+    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
     writer = SummaryWriter('logs/' + args.exp_name)
     train_loader = torch.utils.data.DataLoader(ICLEVRLoader('./'), batch_size = batch_size, shuffle = True)
     # test_loader = torch.utils.data.DataLoader(ICLEVRLoader('./', mode='test'), batch_size = 2, shuffle = True)
     test_condition = get_iCLEVR_data('./', 'test')[1]
+    test_condition = torch.Tensor(test_condition).float()
+    test_condition = test_condition.to(device)
     fixed_noise = torch.randn(len(test_condition), nz, 1, 1, device=device)
     iters = 0
     score_list = []
 
-    for epoch in range(num_epochs):
+    for epoch in range(epoch,num_epochs):
         total_lossD = 0 
         total_lossG = 0 
         netG.train()
@@ -104,6 +112,7 @@ if __name__ == '__main__':
             lossD_fake.backward()
             # D_G_z1 = output.mean().item()
             lossD = lossD_real + lossD_fake
+            # lossD.backward()
             optimizerD.step()
 
             ############################
@@ -137,8 +146,6 @@ if __name__ == '__main__':
         # evaluate
         netG.eval()
         with torch.no_grad():
-            test_condition = torch.tensor(test_condition, dtype=torch.float32)
-            test_condition = test_condition.to(device)
             generate_img = netG(fixed_noise, test_condition)
         images_concat = torchvision.utils.make_grid(generate_img, nrow=8, normalize=True)
         torchvision.utils.save_image(images_concat, 'visualization/cGAN/epoch_{}.png'.format(epoch))
