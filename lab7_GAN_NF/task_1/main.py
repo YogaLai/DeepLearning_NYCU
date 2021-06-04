@@ -12,6 +12,7 @@ import torchvision
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--num_epochs', type=int, default=150)
 parser.add_argument('--exp_name', type=str, default='')
 args = parser.parse_args()
 
@@ -38,7 +39,7 @@ if __name__ == '__main__':
     # Size of feature maps in discriminator
     ndf = 64
     # Number of training epochs
-    num_epochs = 50
+    num_epochs = args.num_epochs
     # Learning rate for optimizers
     lr = 0.0002
     # Beta1 hyperparam for Adam optimizers
