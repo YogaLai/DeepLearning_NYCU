@@ -80,7 +80,7 @@ def train(epoch, net, trainloader, device, optimizer, scheduler, loss_fn, max_gr
     loss_meter = util.AverageMeter()
     with tqdm(total=len(trainloader.dataset)) as progress_bar:
         for x, cond_x in trainloader:
-            x , cond_x= x.to(device), cond_x.to(device)
+            x , cond_x = x.to(device), cond_x.to(device)
             optimizer.zero_grad()
             z, sldj = net(x, cond_x, reverse=False)
             loss = loss_fn(z, sldj)
