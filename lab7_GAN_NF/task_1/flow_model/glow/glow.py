@@ -39,11 +39,27 @@ class Glow(nn.Module):
         img_shape = x.shape
         x = squeeze(x)
         # x_cond = squeeze(x_cond)
-        x_cond = condition_squeeze(x_cond, img_shape)
+        x_cond = self._condition_squeeze(x_cond, img_shape)
         x, sldj = self.flows(x, x_cond, sldj, reverse)
         x = squeeze(x, reverse=True)
 
         return x, sldj
+    
+    def _condition_squeeze(self, cond, img_shape):
+        b, c, h, w = img_shape
+        embed = nn.Sequential(
+            nn.Linear(24, 1 * h * w),
+            nn.ReLU()
+        ).cuda()
+        cond = embed(cond)
+        cond = cond.view(b, 1, h, w)
+        cond, _ = self._pre_process(cond)
+        cond = cond.view(b, 1, h//2, 2, w//2, 2)
+        cond = cond.permute(0, 1, 3, 5, 2, 4).contiguous()
+        cond = cond.view(b, 1 * 2 * 2, h // 2, w // 2)
+        # x = x.view(b, c, h // 2, 2, w // 2, 2)
+
+        return cond
 
     def _pre_process(self, x):
         """Dequantize the input image `x` and convert to logits.
@@ -103,7 +119,6 @@ class _Glow(nn.Module):
                 x, sldj = step(x, x_cond, sldj, reverse)
 
         if self.next is not None:
-            img_shape = x.shape
             x = squeeze(x)
             x_cond = squeeze(x_cond)
             # x_cond = condition_squeeze(x_cond, img_shape)
@@ -167,19 +182,7 @@ def squeeze(x, reverse=False):
 
     return x
 
-def condition_squeeze(cond, img_shape, reverse=False):
-    b, c, h, w = img_shape
-    embed = nn.Sequential(
-        nn.Linear(24, 1 * h * w),
-        nn.ReLU()
-    ).cuda()
-    cond = embed(cond)
-    cond = cond.view(b, 1, h//2, 2, w//2, 2)
-    cond = cond.permute(0, 1, 3, 5, 2, 4).contiguous()
-    cond = cond.view(b, 1 * 2 * 2, h // 2, w // 2)
-    # x = x.view(b, c, h // 2, 2, w // 2, 2)
 
-    return cond
 
 if __name__ == "__main__":
     model = Glow(num_channels=128, num_levels=3, num_steps=6)

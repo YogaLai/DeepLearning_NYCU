@@ -119,16 +119,16 @@ if __name__ == '__main__':
             # (2) Update G network: maximize log(D(G(z)))
             ###########################
             label.fill_(real_label)  # fake labels are real for generator cost
-            for i in range(4):
-                netG.zero_grad()
-                noise = torch.randn(b_size, nz, 1, 1, device=device)
-                fake_data = netG(noise, condition)
-                # Since we just updated D, perform another forward pass of all-fake batch through D
-                output = netD(fake_data, condition).view(-1)
-                lossG = criterion(output, label)
-                lossG.backward()
-                # D_G_z2 = output.mean().item()
-                optimizerG.step()
+            # for i in range(4):
+            netG.zero_grad()
+            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            fake_data = netG(noise, condition)
+            # Since we just updated D, perform another forward pass of all-fake batch through D
+            output = netD(fake_data, condition).view(-1)
+            lossG = criterion(output, label)
+            lossG.backward()
+            # D_G_z2 = output.mean().item()
+            optimizerG.step()
 
             writer.add_scalar('Train/D_loss', lossD.item(), iters)
             writer.add_scalar('Train/G_loss', lossG.item(), iters)
@@ -163,4 +163,4 @@ if __name__ == '__main__':
         }, savefilename)
 
     score_list = np.asarray(score_list)
-    print('Best epoch: %d\nBest score: %f' % (max(score_list), np.argmax(score_list)))
+    print('Best epoch: %d\nBest score: %f' % (np.argmax(score_list), np.max(score_list)))

@@ -14,7 +14,7 @@ import torch.utils.data as data
 import torchvision
 import util
 from dataloader2 import *
-
+from evaluator import evaluation_model
 from flow_model import Glow
 from tqdm import tqdm
 
@@ -42,28 +42,34 @@ def main(args):
                num_steps=args.num_steps,
                mode=args.mode)
     net = net.to(device)
+    evaluator = evaluation_model()
    
     start_epoch = 0
     if args.resume:
         # Load checkpoint.
-        print('Resuming from checkpoint at ckpts/best.pth.tar...')
-        assert os.path.isdir('ckpts'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('ckpts/best.pth.tar')
+        print('Resuming from checkpoint')
+        checkpoint = torch.load('savemodel/cINN/checkpoint_19.tar')
         net.load_state_dict(checkpoint['net'])
         global best_loss
         global global_step
-        best_loss = checkpoint['test_loss']
+        # best_loss = checkpoint['test_loss']
         start_epoch = checkpoint['epoch']
         global_step = start_epoch * len(trainloader.dataset)
 
     loss_fn = util.NLLLoss().to(device)
     optimizer = optim.Adam(net.parameters(), lr=args.lr)
     scheduler = sched.LambdaLR(optimizer, lambda s: min(1., s / args.warm_up))
+    score_list = []
 
     for epoch in range(start_epoch, start_epoch + args.num_epochs):
         train(epoch, net, trainloader, device, optimizer, scheduler,
               loss_fn, args.max_grad_norm)
-        test(epoch, net, testloader, device, loss_fn, args.mode)
+        # test(epoch, net, test_condition, device, loss_fn, args.mode)
+        score = test(epoch, net, test_condition, device, evaluator)
+        score_list.append(score)
+    
+    score_list = np.asarray(score_list)
+    print('Best epoch: %d\nBest score: %f' % (np.max(score_list), np.argmax(score_list)))
 
 
 @torch.enable_grad()
@@ -93,42 +99,48 @@ def train(epoch, net, trainloader, device, optimizer, scheduler, loss_fn, max_gr
 
 
 @torch.no_grad()
-def sample(net, gray_img, device, sigma=0.6):
-    B, C, W, H = gray_img.shape
+def sample(net, test_condition, device, sigma=0.6):
+    # B, C, W, H = gray_img.shape
+    B = len(test_condition)
     z = torch.randn((B, 3, 64, 64), dtype=torch.float32, device=device) * sigma
-    x, _ = net(z, gray_img, reverse=True)
+    x, _ = net(z, test_condition, reverse=True)
     x = torch.sigmoid(x)
 
     return x
 
 
 @torch.no_grad()
-def test(epoch, net, testloader, device, loss_fn, mode='color'):
+# def test(epoch, net, test_condition, device, loss_fn, mode='color'):
+def test(epoch, net, test_condition, device, evaluator):
     global best_loss
     net.eval()
-    loss_meter = util.AverageMeter()
+    # loss_meter = util.AverageMeter()
+    gen_img = sample(net, test_condition, device)
+    score = evaluator.eval(gen_img, test_condition)
+    print('Score: ', score)
+    images_concat = torchvision.utils.make_grid(gen_img, nrow=8)
+    torchvision.utils.save_image(images_concat, 'visualization/cINN/epoch_{}.png'.format(epoch))
 
-    with tqdm(total=len(testloader.dataset)) as progress_bar:
-        for x, x_cond in testloader:
-            x, x_cond = x.to(device), x_cond.to(device)
-            z, sldj = net(x, x_cond, reverse=False)
-            loss = loss_fn(z, sldj)
-            loss_meter.update(loss.item(), x.size(0))
-            progress_bar.set_postfix(nll=loss_meter.avg,
-                                     bpd=util.bits_per_dim(x, loss_meter.avg))
-            progress_bar.update(x.size(0))
+    # with tqdm(total=len(testloader.dataset)) as progress_bar:
+    #     for x, x_cond in testloader:
+    #         x, x_cond = x.to(device), x_cond.to(device)
+    #         z, sldj = net(x, x_cond, reverse=False)
+    #         loss = loss_fn(z, sldj)
+    #         loss_meter.update(loss.item(), x.size(0))
+    #         progress_bar.set_postfix(nll=loss_meter.avg,
+    #                                  bpd=util.bits_per_dim(x, loss_meter.avg))
+    #         progress_bar.update(x.size(0))
 
     # Save checkpoint
-    if loss_meter.avg < best_loss:
-        print('Saving...')
-        state = {
-            'net': net.state_dict(),
-            'test_loss': loss_meter.avg,
-            'epoch': epoch,
-        }
-        os.makedirs('ckpts', exist_ok=True)
-        torch.save(state, 'ckpts/best.pth.tar')
-        best_loss = loss_meter.avg
+    # if loss_meter.avg < best_loss:
+    print('Saving...')
+    state = {
+        'net': net.state_dict(),
+        'epoch': epoch,
+    }
+    torch.save(state, 'savemodel/cINN/checkpoint_' + str(epoch) + '.tar')
+
+    return score
 
     # origin_img, gray_img = next(iter(testloader))
     # B = gray_img.shape[0]
