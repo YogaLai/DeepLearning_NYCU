@@ -47,7 +47,7 @@ class CelebALoader(data.Dataset):
         path = '/media/jojorge/NTFS/yoga/109_2/DeepLearning/DeepLearning_NYCU/lab7_GAN_NF/task_2/CelebA-HQ-img/'
         img = Image.open(path + self.img_list[index])
         img = self.transfrom(img)
-        label = self.label_list[index]
+        label = torch.tensor(self.label_list[index])
 
         return img, label
 
