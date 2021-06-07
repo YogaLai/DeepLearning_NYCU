@@ -69,7 +69,7 @@ def main(args):
         score_list.append(score)
     
     score_list = np.asarray(score_list)
-    print('Best epoch: %d\nBest score: %f' % (np.max(score_list), np.argmax(score_list)))
+    print('Best epoch: %d\nBest score: %f' % (np.argmax(score_list), np.max(score_list)))
 
 
 @torch.enable_grad()
@@ -96,6 +96,14 @@ def train(epoch, net, trainloader, device, optimizer, scheduler, loss_fn, max_gr
                                      lr=optimizer.param_groups[0]['lr'])
             progress_bar.update(x.size(0))
             global_step += x.size(0)
+    
+    print('Saving...')
+    state = {
+        'net': net.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+    }
+    torch.save(state, 'savemodel/cINN/checkpoint_' + str(epoch) + '.tar')
 
 
 @torch.no_grad()
@@ -133,12 +141,7 @@ def test(epoch, net, test_condition, device, evaluator):
 
     # Save checkpoint
     # if loss_meter.avg < best_loss:
-    print('Saving...')
-    state = {
-        'net': net.state_dict(),
-        'epoch': epoch,
-    }
-    torch.save(state, 'savemodel/cINN/checkpoint_' + str(epoch) + '.tar')
+    
 
     return score
 

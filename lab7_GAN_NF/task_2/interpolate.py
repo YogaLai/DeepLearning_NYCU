@@ -39,7 +39,7 @@ if __name__ == '__main__':
         3, args.n_flow, args.n_block, affine=args.affine, conv_lu=not args.no_lu
     )
     model = torch.nn.DataParallel(model_single)
-    ckt = torch.load('savemodel/checkpoint_10.tar')
+    ckt = torch.load('savemodel/checkpoint_44.tar')
     model.load_state_dict(ckt['net'])
     # model = model.to(device)
 
@@ -52,8 +52,8 @@ if __name__ == '__main__':
         ]
     )
     n_bins = 2.0 ** args.n_bits
-    img1 = Image.open(path + '0.jpg')
-    img2 = Image.open(path + '1.jpg')
+    img1 = Image.open(path + '12.jpg')
+    img2 = Image.open(path + '13.jpg')
     img1 = preprocess(img1, transform, n_bins)
     img2 = preprocess(img2, transform, n_bins)
     images = [img1, img2]

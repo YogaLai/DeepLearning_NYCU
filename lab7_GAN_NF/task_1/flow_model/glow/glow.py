@@ -39,7 +39,7 @@ class Glow(nn.Module):
         img_shape = x.shape
         x = squeeze(x)
         # x_cond = squeeze(x_cond)
-        x_cond = self._condition_squeeze(x_cond, img_shape)
+        # x_cond = self._condition_squeeze(x_cond, img_shape)
         x, sldj = self.flows(x, x_cond, sldj, reverse)
         x = squeeze(x, reverse=True)
 
@@ -120,13 +120,13 @@ class _Glow(nn.Module):
 
         if self.next is not None:
             x = squeeze(x)
-            x_cond = squeeze(x_cond)
+            # x_cond = squeeze(x_cond)
             # x_cond = condition_squeeze(x_cond, img_shape)
             x, x_split = x.chunk(2, dim=1)
             x, sldj = self.next(x, x_cond, sldj, reverse)
             x = torch.cat((x, x_split), dim=1)
             x = squeeze(x, reverse=True)
-            x_cond = squeeze(x_cond, reverse=True)
+            # x_cond = squeeze(x_cond, reverse=True)
 
         if reverse:
             for step in reversed(self.steps):
