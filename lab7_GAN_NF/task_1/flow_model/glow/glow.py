@@ -10,7 +10,7 @@ from flow_model.glow.inv_conv import InvConv
 
 class Glow(nn.Module):
 
-    def __init__(self, num_channels, num_levels, num_steps, mode='sketch'):
+    def __init__(self, num_channels, num_levels, num_steps, img_shape, mode='sketch'):
         super(Glow, self).__init__()
 
         # Use bounds to rescale images before converting to logits, not learned
@@ -19,7 +19,8 @@ class Glow(nn.Module):
                            cond_channels=4,
                            mid_channels=num_channels,
                            num_levels=num_levels,
-                           num_steps=num_steps)
+                           num_steps=num_steps,
+                           img_shape=img_shape)
         self.mode = mode
 
     def forward(self, x, x_cond, reverse=False):
@@ -39,7 +40,7 @@ class Glow(nn.Module):
         img_shape = x.shape
         x = squeeze(x)
         # x_cond = squeeze(x_cond)
-        # x_cond = self._condition_squeeze(x_cond, img_shape)
+        x_cond = self._condition_squeeze(x_cond, img_shape)
         x, sldj = self.flows(x, x_cond, sldj, reverse)
         x = squeeze(x, reverse=True)
 
@@ -53,7 +54,7 @@ class Glow(nn.Module):
         ).cuda()
         cond = embed(cond)
         cond = cond.view(b, 1, h, w)
-        cond, _ = self._pre_process(cond)
+        # cond, _ = self._pre_process(cond)
         cond = cond.view(b, 1, h//2, 2, w//2, 2)
         cond = cond.permute(0, 1, 3, 5, 2, 4).contiguous()
         cond = cond.view(b, 1 * 2 * 2, h // 2, w // 2)
@@ -97,36 +98,45 @@ class _Glow(nn.Module):
         num_levels (int): Number of levels to construct. Counter for recursion.
         num_steps (int): Number of steps of flow for each level.
     """
-    def __init__(self, in_channels, cond_channels, mid_channels, num_levels, num_steps):
+    def __init__(self, in_channels, cond_channels, mid_channels, num_levels, num_steps, img_shape):
         super(_Glow, self).__init__()
         self.steps = nn.ModuleList([_FlowStep(in_channels=in_channels,
                                               cond_channels=cond_channels,
-                                              mid_channels=mid_channels)
+                                              mid_channels=mid_channels,
+                                              img_shape=img_shape)
                                     for _ in range(num_steps)])
 
+        c,h,w = img_shape
+        img_shape = c, h//2, w//2
         if num_levels > 1:
             self.next = _Glow(in_channels=2 * in_channels,
                               cond_channels=4 * cond_channels,
                               mid_channels=mid_channels,
                               num_levels=num_levels - 1,
-                              num_steps=num_steps)
+                              num_steps=num_steps,
+                              img_shape=img_shape)
         else:
             self.next = None
 
     def forward(self, x, x_cond, sldj, reverse=False):
         if not reverse:
+            # if len(x_cond.shape)<4:
+            #     h, w = x.size(2), x.size(3)
+            #     cond_expand = nn.Linear(24, 1*h*w).cuda()
+            #     x_cond = cond_expand(x_cond)
+            #     x_cond = x_cond.view(x.size(0), 1, h, w)
             for step in self.steps:
                 x, sldj = step(x, x_cond, sldj, reverse)
 
         if self.next is not None:
             x = squeeze(x)
-            # x_cond = squeeze(x_cond)
+            x_cond = squeeze(x_cond)
             # x_cond = condition_squeeze(x_cond, img_shape)
             x, x_split = x.chunk(2, dim=1)
             x, sldj = self.next(x, x_cond, sldj, reverse)
             x = torch.cat((x, x_split), dim=1)
             x = squeeze(x, reverse=True)
-            # x_cond = squeeze(x_cond, reverse=True)
+            x_cond = squeeze(x_cond, reverse=True)
 
         if reverse:
             for step in reversed(self.steps):
@@ -136,13 +146,13 @@ class _Glow(nn.Module):
 
 
 class _FlowStep(nn.Module):
-    def __init__(self, in_channels, cond_channels, mid_channels):
+    def __init__(self, in_channels, cond_channels, mid_channels, img_shape):
         super(_FlowStep, self).__init__()
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
         self.norm = ActNorm(in_channels, return_ldj=True)
         self.conv = InvConv(in_channels)
-        self.coup = Coupling(in_channels // 2, cond_channels, mid_channels)
+        self.coup = Coupling(in_channels // 2, cond_channels, mid_channels, img_shape)
 
     def forward(self, x, x_cond, sldj=None, reverse=False):
         if reverse:

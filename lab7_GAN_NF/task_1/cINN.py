@@ -40,25 +40,29 @@ def main(args):
     net = Glow(num_channels=args.num_channels,
                num_levels=args.num_levels,
                num_steps=args.num_steps,
+               img_shape=(3,64,64),
                mode=args.mode)
     net = net.to(device)
     evaluator = evaluation_model()
-   
+    
+    loss_fn = util.NLLLoss().to(device)
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+    scheduler = sched.LambdaLR(optimizer, lambda s: min(1., s / args.warm_up))
     start_epoch = 0
+
     if args.resume:
         # Load checkpoint.
         print('Resuming from checkpoint')
-        checkpoint = torch.load('savemodel/cINN/checkpoint_19.tar')
+        checkpoint = torch.load('savemodel/cINN/checkpoint_18.tar')
         net.load_state_dict(checkpoint['net'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
         global best_loss
         global global_step
         # best_loss = checkpoint['test_loss']
         start_epoch = checkpoint['epoch']
         global_step = start_epoch * len(trainloader.dataset)
 
-    loss_fn = util.NLLLoss().to(device)
-    optimizer = optim.Adam(net.parameters(), lr=args.lr)
-    scheduler = sched.LambdaLR(optimizer, lambda s: min(1., s / args.warm_up))
+
     score_list = []
 
     for epoch in range(start_epoch, start_epoch + args.num_epochs):
