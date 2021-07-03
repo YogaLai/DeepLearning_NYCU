@@ -9,6 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from evaluator import evaluation_model
 import numpy as np
 import torchvision
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=64)
@@ -72,8 +73,11 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(ICLEVRLoader('./'), batch_size = batch_size, shuffle = True)
     # test_loader = torch.utils.data.DataLoader(ICLEVRLoader('./', mode='test'), batch_size = 2, shuffle = True)
     test_condition = get_iCLEVR_data('./', 'test')[1]
+    newtest_condition = get_iCLEVR_data('./', 'new_test')[1]
     test_condition = torch.Tensor(test_condition).float()
+    newtest_condition = torch.Tensor(newtest_condition).float()
     test_condition = test_condition.to(device)
+    newtest_condition = newtest_condition.to(device)
     fixed_noise = torch.randn(len(test_condition), nz, 1, 1, device=device)
     iters = 0
     score_list = []
@@ -147,12 +151,21 @@ if __name__ == '__main__':
         netG.eval()
         with torch.no_grad():
             generate_img = netG(fixed_noise, test_condition)
+            newtest_generate_img = netG(fixed_noise, newtest_condition)
         images_concat = torchvision.utils.make_grid(generate_img, nrow=8, normalize=True)
-        torchvision.utils.save_image(images_concat, 'visualization/cGAN/epoch_{}.png'.format(epoch))
+        newtest_images_concat = torchvision.utils.make_grid(generate_img, nrow=8, normalize=True)
+        torchvision.utils.save_image(images_concat, 'visualization/cGAN/test/epoch_{}.png'.format(epoch))
+        torchvision.utils.save_image(newtest_images_concat, 'visualization/cGAN/new_test/epoch_{}.png'.format(epoch))
         score = evaluation_model.eval(generate_img, test_condition)
+        newtest_score = evaluation_model.eval(newtest_generate_img, newtest_condition)
         score_list.append(score)
-        print('Score: ', score)
+        print('Test Score: ', score)
+        print('New Test Score: ', newtest_score)
         print('-----------------------\n')
+        with open('visualization/cGAN/test/score_record.txt', "a") as f:
+            f.write("Epoch {} \t score {:.4f}".format(epoch, score) + "\n")
+        with open('visualization/cGAN/new_test/score_record.txt', "a") as f:
+            f.write("Epoch {} \t score {:.4f}".format(epoch, newtest_score) + "\n")
 
         # save model
         savefilename = 'savemodel/checkpoint_' + str(epoch) + '.tar'

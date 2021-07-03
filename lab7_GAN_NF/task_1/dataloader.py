@@ -20,17 +20,21 @@ def get_iCLEVR_data(root_folder,mode):
             tmp[label[i]] = 1
             label[i] = tmp
         return np.squeeze(img), np.squeeze(label)
+        
+    elif mode =='new_test':
+        data = json.load(open(os.path.join(root_folder,'new_test.json')))
     else:
         data = json.load(open(os.path.join(root_folder,'test.json')))
-        obj = json.load(open(os.path.join(root_folder,'objects.json')))
-        label = data
-        for i in range(len(label)):
-            for j in range(len(label[i])):
-                label[i][j] = obj[label[i][j]]
-            tmp = np.zeros(len(obj))
-            tmp[label[i]] = 1
-            label[i] = tmp
-        return None, label
+
+    obj = json.load(open(os.path.join(root_folder,'objects.json')))
+    label = data
+    for i in range(len(label)):
+        for j in range(len(label[i])):
+            label[i][j] = obj[label[i][j]]
+        tmp = np.zeros(len(obj))
+        tmp[label[i]] = 1
+        label[i] = tmp
+    return None, label
 
 
 class ICLEVRLoader(data.Dataset):
